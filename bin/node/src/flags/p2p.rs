@@ -15,7 +15,7 @@ use kona_genesis::RollupConfig;
 use kona_node_service::NetworkConfig;
 use kona_p2p::{GaterConfig, LocalNode};
 use kona_peers::{PeerMonitoring, PeerScoreLevel};
-use kona_sources::RuntimeLoader;
+use kona_sources::{BlockSigner, LocalSigner, RuntimeLoader};
 use libp2p::identity::Keypair;
 use std::{
     net::{IpAddr, SocketAddr},
@@ -400,12 +400,13 @@ impl P2PArgs {
         let mut gossip_address = libp2p::Multiaddr::from(self.listen_ip);
         gossip_address.push(libp2p::multiaddr::Protocol::Tcp(self.listen_tcp_port));
 
-        let local_signer = self
-            .sequencer_key
-            .as_ref()
-            .map(PrivateKeySigner::from_bytes)
-            .transpose()?
-            .map(|s| s.with_chain_id(Some(args.l2_chain_id.into())));
+        let local_signer =
+            self.sequencer_key.as_ref().map(PrivateKeySigner::from_bytes).transpose()?.map(|s| {
+                let signer: Arc<dyn BlockSigner + Send + Sync> =
+                    Arc::new(LocalSigner::from(s.with_chain_id(Some(args.l2_chain_id.into()))));
+
+                signer
+            });
 
         Ok(NetworkConfig {
             discovery_config,
@@ -426,7 +427,7 @@ impl P2PArgs {
             },
             bootnodes: self.bootnodes,
             rollup_config: config.clone(),
-            local_signer,
+            signer: local_signer,
         })
     }
 
